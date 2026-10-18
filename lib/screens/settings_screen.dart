@@ -6,7 +6,6 @@ import '../services/theme_provider.dart';
 import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/reminder_scheduler.dart';
-import '../utils/ui_helpers.dart';
 import 'onboarding_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -235,26 +234,6 @@ class SettingsScreen extends StatelessWidget {
         );
       },
     );
-  }
-
-  Future<void> _sendTestNotification(
-    BuildContext context,
-    WaterProvider provider,
-  ) async {
-    final allowed = await NotificationService.requestPermission();
-    if (!context.mounted) return;
-    if (!allowed) {
-      showCuteSnackbar(
-        context,
-        'Bạn chưa cho phép thông báo. Vào Cài đặt máy > Water Capy để bật nha!',
-      );
-      return;
-    }
-    await NotificationService.showInstantNotification(
-      title: 'Ê ${provider.userName} ơi! 🐹',
-      body: 'Capy test thông báo nè. Nhận được là ngon lành rồi đó!',
-    );
-    if (context.mounted) showCuteSnackbar(context, 'Đã gửi thông báo thử!');
   }
 
   // BẢNG ĐIỀU KHOẢN SIÊU LẦY LỘI NẰM Ở ĐÂY NÈ
@@ -592,27 +571,6 @@ class SettingsScreen extends StatelessWidget {
                       ),
                       onTap: () => _showIntervalSheet(context, waterProvider),
                     ),
-                    const Divider(height: 1, indent: 20, endIndent: 20),
-                    ListTile(
-                      leading: const Icon(
-                        Icons.send,
-                        color: AppTheme.oceanBlue,
-                      ),
-                      title: const Text(
-                        'Gửi thử thông báo',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: const Text(
-                        'Kiểm tra xem máy đã nhận được thông báo chưa',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      trailing: const Icon(
-                        Icons.chevron_right,
-                        color: Colors.grey,
-                      ),
-                      onTap: () =>
-                          _sendTestNotification(context, waterProvider),
-                    ),
                   ],
                 ),
               ),
@@ -668,7 +626,7 @@ class SettingsScreen extends StatelessWidget {
                         'Tester',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      subtitle: Text('Bảo Lộc & Minh Phú'),
+                      subtitle: Text('Minh Phú'),
                     ),
                     const Divider(height: 1, indent: 20, endIndent: 20),
 

@@ -4,9 +4,14 @@ import 'package:awesome_notifications/awesome_notifications.dart';
 import '../utils/reminder_scheduler.dart';
 
 class NotificationService {
-  static const String channelKey = 'capy_water_channel';
+  // Android không cho đổi âm thanh của kênh đã tạo -> tạo kênh mới có tiếng Capy
+  static const String channelKey = 'capy_water_channel_v2';
+  static const String _legacyChannelKey = 'capy_water_channel';
 
-  // ID cố định cho lịch nhắc: 1000, 1001, ... (thông báo tức thì dùng ID < 1000)
+  // File: android/app/src/main/res/raw/res_capy_noti.mp3 và ios/Runner/res_capy_noti.aiff
+  static const String _soundSource = 'resource://raw/res_capy_noti';
+
+  // ID cố định cho lịch nhắc: 1000, 1001, ...
   static const int _reminderIdBase = 1000;
 
   // Xếp hàng các lần lên lịch để 2 lần gọi liền nhau không giẫm chân nhau
@@ -37,9 +42,21 @@ class NotificationService {
           ledColor: Colors.white,
           importance: NotificationImportance.Max,
           channelShowBadge: true,
+          playSound: true,
+          soundSource: _soundSource,
         ),
       ],
     );
+
+    // Dọn kênh cũ (không có tiếng) và các lịch nhắc còn sót lại trên kênh đó
+    try {
+      await AwesomeNotifications().cancelSchedulesByChannelKey(
+        _legacyChannelKey,
+      );
+      await AwesomeNotifications().removeChannel(_legacyChannelKey);
+    } catch (e) {
+      debugPrint('Lỗi dọn kênh thông báo cũ: $e');
+    }
     // Không xin quyền ở đây: lúc này app chưa có giao diện (chưa runApp),
     // việc xin quyền được làm ở MainTabScreen.
   }
@@ -54,26 +71,6 @@ class NotificationService {
     if (kIsWeb) return false;
     if (await AwesomeNotifications().isNotificationAllowed()) return true;
     return AwesomeNotifications().requestPermissionToSendNotifications();
-  }
-
-  static Future<void> showInstantNotification({
-    required String title,
-    required String body,
-  }) async {
-    if (kIsWeb) return;
-
-    // Bắn thông báo
-    await AwesomeNotifications().createNotification(
-      content: NotificationContent(
-        id: DateTime.now().millisecondsSinceEpoch.remainder(
-          _reminderIdBase,
-        ), // ID ngẫu nhiên để không đè thông báo cũ
-        channelKey: channelKey,
-        title: title,
-        body: body,
-        notificationLayout: NotificationLayout.Default,
-      ),
-    );
   }
 
   /// Hủy toàn bộ lịch nhắc (dùng khi Reset app)

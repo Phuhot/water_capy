@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Giữ file âm thanh thông báo khi build release (tránh bị R8 xóa vì không thấy dùng trong code) -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/res_capy_noti" />
