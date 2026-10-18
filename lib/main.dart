@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/onboarding_screen.dart';
-import 'screens/home_screen.dart';
 import 'services/water_provider.dart';
 import 'services/notification_service.dart';
 import 'services/theme_provider.dart'; // Đã thêm

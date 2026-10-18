@@ -31,25 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _currentTip = _capyTips[Random().nextInt(_capyTips.length)];
   }
 
-  // Tạo lịch uống dựa trên Giờ Thức / Giờ Ngủ của Cài đặt
-  List<DateTime> _generateUpcomingSchedule(WaterProvider provider) {
-    List<DateTime> schedule = [];
-    DateTime now = DateTime.now();
-    int wakeHour = int.parse(provider.wakeTime.split(':')[0]);
-    int sleepHour = int.parse(provider.sleepTime.split(':')[0]);
-
-    for (int i = 1; i <= 3; i++) {
-      DateTime nextTime = now.add(Duration(minutes: 90 * i));
-      bool isAwake = (wakeHour < sleepHour)
-          ? (nextTime.hour >= wakeHour && nextTime.hour < sleepHour)
-          : (nextTime.hour >= wakeHour ||
-                nextTime.hour < sleepHour); // Ngủ xuyên đêm
-
-      if (isAwake) schedule.add(nextTime);
-    }
-    return schedule;
-  }
-
   IconData _getIconForCup(int amount) {
     if (amount <= 200) return Icons.local_drink;
     if (amount <= 400) return Icons.coffee;
@@ -555,9 +536,20 @@ class _HomeScreenState extends State<HomeScreen> {
                                 horizontal: 24,
                                 vertical: 10,
                               ),
-                              children: _generateUpcomingSchedule(waterProvider)
-                                  .map((time) => _buildScheduleItem(time))
-                                  .toList(),
+                              // Lấy đúng các mốc đã đặt thông báo nhắc
+                              children: waterProvider.reminderEnabled
+                                  ? waterProvider.upcomingReminders
+                                        .map((time) => _buildScheduleItem(time))
+                                        .toList()
+                                  : [
+                                      const Padding(
+                                        padding: EdgeInsets.only(top: 8),
+                                        child: Text(
+                                          'Nhắc nhở đang tắt 🔕 Bật lại trong Cài đặt nha!',
+                                          style: TextStyle(color: Colors.grey),
+                                        ),
+                                      ),
+                                    ],
                             ),
                           ),
                         ],
@@ -574,6 +566,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildScheduleItem(DateTime time) {
+    final now = DateTime.now();
+    final isTomorrow = time.day != now.day;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -592,7 +586,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           Text(
-            '${time.hour}:${time.minute.toString().padLeft(2, '0')}',
+            '${isTomorrow ? 'Mai ' : ''}${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               color: AppTheme.oceanBlue,

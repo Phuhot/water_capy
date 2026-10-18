@@ -3,7 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/water_provider.dart';
 import '../services/theme_provider.dart';
+import '../services/notification_service.dart';
 import '../utils/app_theme.dart';
+import '../utils/reminder_scheduler.dart';
+import '../utils/ui_helpers.dart';
 import 'onboarding_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -125,7 +128,7 @@ class SettingsScreen extends StatelessWidget {
         minute: int.parse(provider.wakeTime.split(':')[1]),
       ),
     );
-    if (wake == null) return;
+    if (wake == null || !context.mounted) return;
 
     TimeOfDay? sleep = await showTimePicker(
       context: context,
@@ -138,9 +141,120 @@ class SettingsScreen extends StatelessWidget {
     if (sleep == null) return;
 
     provider.updateSchedule(
-      '${wake.hour}:${wake.minute.toString().padLeft(2, '0')}',
-      '${sleep.hour}:${sleep.minute.toString().padLeft(2, '0')}',
+      '${wake.hour.toString().padLeft(2, '0')}:${wake.minute.toString().padLeft(2, '0')}',
+      '${sleep.hour.toString().padLeft(2, '0')}:${sleep.minute.toString().padLeft(2, '0')}',
     );
+  }
+
+  String _formatInterval(int minutes) {
+    if (minutes < 60) return '$minutes phút';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return m == 0 ? '$h giờ' : '${h}h${m.toString().padLeft(2, '0')}';
+  }
+
+  // Bảng chọn khoảng nhắc (cùng kiểu với bảng chọn cốc ở Trang chủ)
+  void _showIntervalSheet(BuildContext context, WaterProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 50,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Capy nhắc bạn mỗi...',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: ReminderScheduler.intervalOptions.map((minutes) {
+                  final isSelected = provider.reminderInterval == minutes;
+                  return GestureDetector(
+                    onTap: () {
+                      provider.setReminderInterval(minutes);
+                      Navigator.pop(context);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 90,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppTheme.oceanBlue
+                            : AppTheme.oceanBlue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.alarm,
+                            size: 22,
+                            color: isSelected
+                                ? Colors.white
+                                : AppTheme.oceanBlue,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatInterval(minutes),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected
+                                  ? Colors.white
+                                  : AppTheme.oceanBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _sendTestNotification(
+    BuildContext context,
+    WaterProvider provider,
+  ) async {
+    final allowed = await NotificationService.requestPermission();
+    if (!context.mounted) return;
+    if (!allowed) {
+      showCuteSnackbar(
+        context,
+        'Bạn chưa cho phép thông báo. Vào Cài đặt máy > Water Capy để bật nha!',
+      );
+      return;
+    }
+    await NotificationService.showInstantNotification(
+      title: 'Ê ${provider.userName} ơi! 🐹',
+      body: 'Capy test thông báo nè. Nhận được là ngon lành rồi đó!',
+    );
+    if (context.mounted) showCuteSnackbar(context, 'Đã gửi thông báo thử!');
   }
 
   // BẢNG ĐIỀU KHOẢN SIÊU LẦY LỘI NẰM Ở ĐÂY NÈ
@@ -217,6 +331,7 @@ class SettingsScreen extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () async {
+              await NotificationService.cancelReminders();
               await (await SharedPreferences.getInstance()).clear();
               if (context.mounted)
                 Navigator.pushAndRemoveUntil(
@@ -409,6 +524,94 @@ class SettingsScreen extends StatelessWidget {
                         activeColor: AppTheme.oceanBlue,
                         onChanged: (val) => themeProvider.toggleTheme(),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 30),
+
+              // NHẮC UỐNG NƯỚC
+              const Text(
+                'NHẮC UỐNG NƯỚC',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                elevation: 0,
+                color: Theme.of(context).cardColor.withOpacity(0.8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(
+                        waterProvider.reminderEnabled
+                            ? Icons.notifications_active
+                            : Icons.notifications_off,
+                        color: AppTheme.oceanBlue,
+                      ),
+                      title: const Text(
+                        'Nhắc uống nước',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(
+                        waterProvider.reminderEnabled
+                            ? '${ReminderScheduler.buildReminderMinutes(wakeTime: waterProvider.wakeTime, sleepTime: waterProvider.sleepTime, intervalMinutes: waterProvider.reminderInterval).length} lần/ngày, từ lúc thức đến lúc ngủ'
+                            : 'Đang tắt',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: Switch(
+                        value: waterProvider.reminderEnabled,
+                        activeColor: AppTheme.oceanBlue,
+                        onChanged: (val) =>
+                            waterProvider.setReminderEnabled(val),
+                      ),
+                    ),
+                    const Divider(height: 1, indent: 20, endIndent: 20),
+                    ListTile(
+                      enabled: waterProvider.reminderEnabled,
+                      leading: const Icon(
+                        Icons.timer,
+                        color: AppTheme.oceanBlue,
+                      ),
+                      title: const Text(
+                        'Nhắc mỗi',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      trailing: Text(
+                        '${_formatInterval(waterProvider.reminderInterval)} >',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 14,
+                        ),
+                      ),
+                      onTap: () => _showIntervalSheet(context, waterProvider),
+                    ),
+                    const Divider(height: 1, indent: 20, endIndent: 20),
+                    ListTile(
+                      leading: const Icon(
+                        Icons.send,
+                        color: AppTheme.oceanBlue,
+                      ),
+                      title: const Text(
+                        'Gửi thử thông báo',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: const Text(
+                        'Kiểm tra xem máy đã nhận được thông báo chưa',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(
+                        Icons.chevron_right,
+                        color: Colors.grey,
+                      ),
+                      onTap: () =>
+                          _sendTestNotification(context, waterProvider),
                     ),
                   ],
                 ),

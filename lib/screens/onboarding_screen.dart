@@ -108,6 +108,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       // 🚑 4. ĐỒNG BỘ LẠI TẤT CẢ DỮ LIỆU LẦN CUỐI
       await provider.loadData();
 
+      if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const MainTabScreen()),

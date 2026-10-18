@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'notification_service.dart';
+import '../utils/reminder_scheduler.dart';
 
 class WaterProvider with ChangeNotifier {
   int _currentWater = 0;
@@ -10,6 +13,8 @@ class WaterProvider with ChangeNotifier {
   int _weight = 50;
   String _wakeTime = '07:00';
   String _sleepTime = '22:30';
+  bool _reminderEnabled = true;
+  int _reminderInterval = 60; // phút
 
   int _selectedCupAmount = 250;
   int get selectedCupAmount => _selectedCupAmount;
@@ -28,10 +33,53 @@ class WaterProvider with ChangeNotifier {
   int get weight => _weight;
   String get wakeTime => _wakeTime;
   String get sleepTime => _sleepTime;
+  bool get reminderEnabled => _reminderEnabled;
+  int get reminderInterval => _reminderInterval;
   List<Map<String, dynamic>> get dailyLogs => _dailyLogs;
 
   double get progress =>
       _dailyGoal > 0 ? (_currentWater / _dailyGoal).clamp(0.0, 1.0) : 0.0;
+
+  /// 3 mốc nhắc sắp tới (đúng với lịch thông báo đã đặt)
+  List<DateTime> get upcomingReminders => ReminderScheduler.upcoming(
+    wakeTime: _wakeTime,
+    sleepTime: _sleepTime,
+    intervalMinutes: _reminderInterval,
+    now: DateTime.now(),
+  );
+
+  static String _todayStr() => DateTime.now().toIso8601String().split('T')[0];
+
+  // Nếu app vẫn mở qua nửa đêm thì lượng nước hôm qua phải về 0
+  Future<void> _resetIfNewDay(SharedPreferences prefs) async {
+    final today = _todayStr();
+    if (prefs.getString('lastDate') != today) {
+      _currentWater = 0;
+      await prefs.setInt('currentWater', 0);
+      await prefs.setString('lastDate', today);
+    }
+  }
+
+  /// Gọi khi app quay lại foreground
+  Future<void> refreshDay() async {
+    final prefs = await SharedPreferences.getInstance();
+    final before = _currentWater;
+    await _resetIfNewDay(prefs);
+    if (before != _currentWater) notifyListeners();
+  }
+
+  /// Đặt lại toàn bộ lịch nhắc theo cài đặt hiện tại
+  Future<void> syncReminders() => _syncReminders();
+
+  Future<void> _syncReminders() {
+    return NotificationService.scheduleDailyReminders(
+      enabled: _reminderEnabled,
+      wakeTime: _wakeTime,
+      sleepTime: _sleepTime,
+      intervalMinutes: _reminderInterval,
+      userName: _userName,
+    );
+  }
 
   // === LOGIC TẠO THANH STREAK 7 NGÀY ===
   List<Map<String, dynamic>> get last7DaysStreak {
@@ -62,17 +110,11 @@ class WaterProvider with ChangeNotifier {
     _weight = prefs.getInt('weight') ?? 50;
     _wakeTime = prefs.getString('wakeTime') ?? '07:00';
     _sleepTime = prefs.getString('sleepTime') ?? '22:30';
+    _reminderEnabled = prefs.getBool('reminderEnabled') ?? true;
+    _reminderInterval = prefs.getInt('reminderInterval') ?? 60;
 
-    String today = DateTime.now().toIso8601String().split('T')[0];
-    String savedDate = prefs.getString('lastDate') ?? '';
-
-    if (today != savedDate) {
-      _currentWater = 0;
-      await prefs.setInt('currentWater', 0);
-      await prefs.setString('lastDate', today);
-    } else {
-      _currentWater = prefs.getInt('currentWater') ?? 0;
-    }
+    _currentWater = prefs.getInt('currentWater') ?? 0;
+    await _resetIfNewDay(prefs);
 
     String? logsString = prefs.getString('dailyLogs');
     if (logsString != null) {
@@ -80,8 +122,16 @@ class WaterProvider with ChangeNotifier {
       _dailyLogs = decoded
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
+    } else {
+      // Sau khi Reset app, không giữ lại lịch sử cũ trong bộ nhớ
+      _dailyLogs = [];
     }
     notifyListeners();
+
+    // Chỉ đặt lịch nhắc khi đã qua bước làm quen
+    if (!(prefs.getBool('isFirstTime') ?? true)) {
+      await _syncReminders();
+    }
   }
 
   // Cập nhật Hồ sơ cá nhân
@@ -94,10 +144,12 @@ class WaterProvider with ChangeNotifier {
     await prefs.setString('gender', gender);
     await prefs.setInt('weight', weight);
     notifyListeners();
+    await _syncReminders(); // Tên mới trong nội dung thông báo
   }
 
   // Cập nhật Mục tiêu
   Future<void> updateGoal(int goal) async {
+    goal = goal.clamp(500, 10000);
     _dailyGoal = goal;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('dailyGoal', goal);
@@ -112,17 +164,52 @@ class WaterProvider with ChangeNotifier {
     await prefs.setString('wakeTime', wake);
     await prefs.setString('sleepTime', sleep);
     notifyListeners();
+    await _syncReminders();
+  }
+
+  // Bật / tắt nhắc uống nước
+  Future<void> setReminderEnabled(bool enabled) async {
+    _reminderEnabled = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('reminderEnabled', enabled);
+    notifyListeners();
+    await _syncReminders();
+  }
+
+  // Đổi khoảng cách giữa 2 lần nhắc
+  Future<void> setReminderInterval(int minutes) async {
+    _reminderInterval = minutes;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('reminderInterval', minutes);
+    notifyListeners();
+    await _syncReminders();
   }
 
   Future<void> addWater(int amount) async {
+    final prefs = await SharedPreferences.getInstance();
+    await _resetIfNewDay(prefs);
     _currentWater += amount;
     _dailyLogs.insert(0, {
       'amount': amount,
       'time': DateTime.now().toIso8601String(),
     });
-    final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('currentWater', _currentWater);
     await prefs.setString('dailyLogs', jsonEncode(_dailyLogs));
     notifyListeners();
+  }
+
+  // Xóa một lần uống bị bấm nhầm (nếu là của hôm nay thì trừ lại lượng nước)
+  Future<void> removeLog(Map<String, dynamic> log) async {
+    if (!_dailyLogs.remove(log)) return;
+    final isToday = (log['time'] as String).startsWith(_todayStr());
+    if (isToday) {
+      _currentWater = max(0, _currentWater - (log['amount'] as int));
+    }
+    // Cập nhật giao diện ngay (Dismissible yêu cầu item biến mất liền)
+    notifyListeners();
+
+    final prefs = await SharedPreferences.getInstance();
+    if (isToday) await prefs.setInt('currentWater', _currentWater);
+    await prefs.setString('dailyLogs', jsonEncode(_dailyLogs));
   }
 }

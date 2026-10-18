@@ -397,6 +397,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     'Lịch sử nạp nước',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
+                  if (provider.dailyLogs.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Bấm nhầm? Vuốt sang trái để xóa nha 👈',
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                  ],
                   const SizedBox(height: 16),
 
                   provider.dailyLogs.isEmpty
@@ -416,14 +423,37 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           itemBuilder: (context, index) {
                             final log = provider.dailyLogs[index];
                             final time = DateTime.parse(log['time']);
-                            final isToday = time.day == DateTime.now().day;
+                            final now = DateTime.now();
+                            final isToday =
+                                time.year == now.year &&
+                                time.month == now.month &&
+                                time.day == now.day;
                             final dateStr = isToday
                                 ? 'Hôm nay'
                                 : '${time.day}/${time.month}';
                             final timeStr =
                                 '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
-                            return Container(
+                            return Dismissible(
+                              key: ValueKey('${log['time']}_${log['amount']}'),
+                              direction: DismissDirection.endToStart,
+                              confirmDismiss: (_) =>
+                                  _confirmDeleteLog(context, log['amount']),
+                              onDismissed: (_) => provider.removeLog(log),
+                              background: Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.only(right: 20),
+                                alignment: Alignment.centerRight,
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent.withOpacity(0.8),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: const Icon(
+                                  Icons.delete,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              child: Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               decoration: BoxDecoration(
                                 color: Theme.of(
@@ -462,6 +492,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   ),
                                 ),
                               ),
+                              ),
                             );
                           },
                         ),
@@ -472,6 +503,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
         },
       ),
     );
+  }
+
+  Future<bool> _confirmDeleteLog(BuildContext context, int amount) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Xóa lần uống này?',
+          style: TextStyle(color: AppTheme.oceanBlue),
+        ),
+        content: Text('Capy sẽ trừ lại $amount ml đó nha 🐹'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Xóa', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Widget _buildStatCard(

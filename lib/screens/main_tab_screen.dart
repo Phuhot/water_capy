@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:awesome_notifications/awesome_notifications.dart'; // 🚑 Thêm thư viện thông báo
+import 'package:provider/provider.dart';
+import '../services/notification_service.dart';
+import '../services/water_provider.dart';
 import '../utils/app_theme.dart';
 import 'home_screen.dart';
 import 'history_screen.dart';
@@ -12,7 +14,8 @@ class MainTabScreen extends StatefulWidget {
   _MainTabScreenState createState() => _MainTabScreenState();
 }
 
-class _MainTabScreenState extends State<MainTabScreen> {
+class _MainTabScreenState extends State<MainTabScreen>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
 
   // Danh sách 3 màn hình
@@ -22,14 +25,41 @@ class _MainTabScreenState extends State<MainTabScreen> {
     const SettingsScreen(),
   ];
 
-  // 🚑 THÊM HÀM NÀY ĐỂ HỎI QUYỀN THÔNG BÁO TỪ ANDROID 13+
+  bool _notificationAllowed = false;
+
+  // 🚑 HỎI QUYỀN THÔNG BÁO (Android 13+ / iOS) RỒI ĐẶT LẠI LỊCH NHẮC
   @override
   void initState() {
     super.initState();
-    AwesomeNotifications().isNotificationAllowed().then((isAllowed) {
-      if (!isAllowed) {
-        AwesomeNotifications().requestPermissionToSendNotifications();
-      }
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ensurePermission());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _ensurePermission() async {
+    final allowed = await NotificationService.requestPermission();
+    _notificationAllowed = allowed;
+    // Lịch đặt trước khi có quyền có thể bị hệ điều hành bỏ qua -> đặt lại
+    if (allowed && mounted) {
+      await context.read<WaterProvider>().syncReminders();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final provider = context.read<WaterProvider>();
+    provider.refreshDay(); // Qua ngày mới thì về 0 ml
+
+    // Người dùng vừa bật quyền trong Cài đặt hệ thống -> đặt lại lịch nhắc
+    NotificationService.isAllowed().then((allowed) {
+      if (allowed && !_notificationAllowed) provider.syncReminders();
+      _notificationAllowed = allowed;
     });
   }
 
